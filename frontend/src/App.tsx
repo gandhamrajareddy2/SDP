@@ -69,9 +69,25 @@ type FeedbackResult = {
     decision: string[]
     chartSpecific: string[]
   }
+  weighted: {
+    trend: number
+    evidence: number
+    decision: number
+    chartSpecific: number
+    total: number
+    max: number
+  }
 }
 
-const API_BASE = 'http://localhost:8000/api'
+const configuredApiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
+const inferredApiBase =
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000/api'
+    : '/api'
+const API_BASE = (configuredApiBase && configuredApiBase.length > 0 ? configuredApiBase : inferredApiBase).replace(
+  /\/$/,
+  '',
+)
 
 const projects: Project[] = [
   {
@@ -242,6 +258,14 @@ function evaluateInterpretation(
         decision: [],
         chartSpecific: [],
       },
+      weighted: {
+        trend: 0,
+        evidence: 0,
+        decision: 0,
+        chartSpecific: 0,
+        total: 0,
+        max: 8,
+      },
     }
   }
 
@@ -322,8 +346,31 @@ function evaluateInterpretation(
   const hasDecision = decisionMatches.length > 0
   const hasChartSpecific = chartSpecificMatches.length > 0
 
-  const checks = [hasTrend, hasEvidence, hasDecision, hasChartSpecific]
-  const score = checks.filter(Boolean).length
+  const trendPhraseCount = phraseMatches(trendPhrases).length
+  const evidencePhraseCount = phraseMatches(evidencePhrases).length
+  const decisionPhraseCount = phraseMatches(decisionPhrases).length
+  const chartPhraseCount = phraseMatches(chartPhrases[chartType]).length
+
+  const weightCategory = (hasKeyword: boolean, phraseCount: number): number => {
+    if (!hasKeyword && phraseCount === 0) {
+      return 0
+    }
+    const base = hasKeyword ? 1 : 0
+    const phraseBonus = Math.min(1, phraseCount)
+    return base + phraseBonus
+  }
+
+  const weighted = {
+    trend: weightCategory(hasTrend, trendPhraseCount),
+    evidence: weightCategory(hasEvidence, evidencePhraseCount),
+    decision: weightCategory(hasDecision, decisionPhraseCount),
+    chartSpecific: weightCategory(hasChartSpecific, chartPhraseCount),
+    total: 0,
+    max: 8,
+  }
+  weighted.total = weighted.trend + weighted.evidence + weighted.decision + weighted.chartSpecific
+
+  const score = Math.max(1, Math.round((weighted.total / weighted.max) * 5))
 
   const detected = {
     trend: trendMatches,
@@ -332,27 +379,30 @@ function evaluateInterpretation(
     chartSpecific: chartSpecificMatches,
   }
 
-  if (score >= 4) {
+  if (weighted.total >= 6) {
     return {
       level: 'excellent',
       score: 5,
-      message: 'Excellent interpretation. You used pattern, evidence, and action-focused reasoning.',
+      message: 'Excellent interpretation. Strong phrase-level reasoning was detected across key categories.',
       detected,
+      weighted,
     }
   }
-  if (score >= 2) {
+  if (weighted.total >= 3) {
     return {
       level: 'good',
-      score: 4,
-      message: 'Good start. Add one concrete evidence phrase and one clear decision/action sentence.',
+      score,
+      message: 'Good start. Add more complete analytical phrases to strengthen evidence and decision quality.',
       detected,
+      weighted,
     }
   }
   return {
     level: 'improve',
-    score: 3,
-    message: 'Try again with structure: pattern observed, evidence from graph, then a practical conclusion.',
+    score,
+    message: 'Try again with this structure: trend phrase, evidence phrase, then a clear action phrase.',
     detected,
+    weighted,
   }
 }
 
@@ -868,6 +918,13 @@ function App() {
                 <div className={`feedback-panel ${activeFeedback.level}`}>
                   <strong>Auto-feedback ({activeFeedback.score}/5):</strong>
                   <p>{activeFeedback.message}</p>
+                  <p>
+                    Weighted score: {activeFeedback.weighted.total}/{activeFeedback.weighted.max}
+                    {' | '}Trend {activeFeedback.weighted.trend}/2
+                    {' | '}Evidence {activeFeedback.weighted.evidence}/2
+                    {' | '}Decision {activeFeedback.weighted.decision}/2
+                    {' | '}Chart {activeFeedback.weighted.chartSpecific}/2
+                  </p>
                   <div className="keyword-grid">
                     <div>
                       <span>Trend terms:</span>

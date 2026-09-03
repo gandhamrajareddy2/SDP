@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from .config import GENERATED_DIR
+from .config import CORS_ALLOW_CREDENTIALS, CORS_ALLOW_ORIGINS, GENERATED_DIR
 from .dataset_generator import generate_student_dataset
 from .db import delete_dataset_record, get_dataset_record, init_db, save_dataset_record
 from .schemas import DatasetGenerateRequest, DatasetSummaryResponse
@@ -17,8 +17,8 @@ app = FastAPI(title="DataScience Lab API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
