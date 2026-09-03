@@ -106,3 +106,17 @@ export async function fetchAllRows(datasetId: string): Promise<FullRowsResponse>
   const response = await axios.get<FullRowsResponse>(`${API_BASE}/datasets/${datasetId}/rows`)
   return response.data
 }
+
+export async function uploadDataset(file: File, datasetName?: string): Promise<DatasetSummary> {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (datasetName && datasetName.trim()) {
+    formData.append('dataset_name', datasetName.trim())
+  }
+  const response = await axios.post<DatasetSummary>(`${API_BASE}/datasets/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return response.data
+}

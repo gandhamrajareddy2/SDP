@@ -10,6 +10,7 @@ import {
   fetchDatasetProfile,
   fetchDatasetRowsPaginated,
   generateDataset,
+  uploadDataset,
   type DatasetSummary,
 } from '../services/explorer'
 import { API_BASE } from '../services/api'
@@ -40,6 +41,8 @@ export default function DataExplorerPage() {
   const [noiseLevel, setNoiseLevel] = useState(1)
   const [randomSeed, setRandomSeed] = useState('')
   const [datasetSummary, setDatasetSummary] = useState<DatasetSummary | null>(null)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [uploadedName, setUploadedName] = useState('')
   const [statusMessage, setStatusMessage] = useState('Generate a dataset to start exploration.')
   const [activeTab, setActiveTab] = useState<ExplorerTab>('overview')
 
@@ -85,6 +88,30 @@ export default function DataExplorerPage() {
     },
     onError: () => {
       setStatusMessage('Could not reset dataset right now. Please try again.')
+    },
+  })
+
+  const uploadMutation = useMutation({
+    mutationFn: ({ file, datasetName }: { file: File; datasetName?: string }) => uploadDataset(file, datasetName),
+    onSuccess: (data) => {
+      setDatasetSummary(data)
+      saveLastDataset(data.dataset_name)
+      setStatusMessage('Dataset uploaded successfully. Use tabs to explore and analyze your own data.')
+      setActiveTab('overview')
+      setPage(1)
+      setSortBy('')
+      setFilterColumn('')
+      setFilterValue('')
+      setNumericMinText('')
+      setNumericMaxText('')
+      setMissingOnly(false)
+      setUploadedFile(null)
+    },
+    onError: (error) => {
+      const message = axios.isAxiosError(error)
+        ? error.response?.data?.detail ?? error.message
+        : 'Dataset upload failed.'
+      setStatusMessage(String(message))
     },
   })
 
@@ -168,6 +195,14 @@ export default function DataExplorerPage() {
       return
     }
     window.open(`${API_BASE}/datasets/${datasetSummary.dataset_id}/download`, '_blank')
+  }
+
+  const handleUpload = () => {
+    if (!uploadedFile) {
+      setStatusMessage('Select a CSV file to upload.')
+      return
+    }
+    uploadMutation.mutate({ file: uploadedFile, datasetName: uploadedName })
   }
 
   return (
@@ -283,6 +318,30 @@ export default function DataExplorerPage() {
           </button>
         </div>
         <p className="status-message">{statusMessage}</p>
+      </section>
+
+      <section className="card">
+        <h3>Upload Your Own Dataset</h3>
+        <p>Upload a CSV dataset and use the same explorer, cleaning, statistics, and visualization workflow.</p>
+        <div className="form-grid">
+          <label>
+            Dataset name (optional)
+            <input value={uploadedName} onChange={(event) => setUploadedName(event.target.value)} placeholder="My Dataset" />
+          </label>
+          <label>
+            CSV file
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) => setUploadedFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+        </div>
+        <div className="button-row">
+          <button type="button" className="primary" onClick={handleUpload}>
+            {uploadMutation.isPending ? 'Uploading...' : 'Upload Dataset'}
+          </button>
+        </div>
       </section>
 
       {!datasetSummary && (

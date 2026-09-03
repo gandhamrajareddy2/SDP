@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 import math
 import random
+import re
 import statistics
 import time
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
@@ -341,27 +343,46 @@ def _build_summary(
     fieldnames: list[str],
     rows: list[dict[str, object | None]],
 ) -> DatasetSummaryResponse:
-    template = get_dataset_template(dataset_name)
+    try:
+        template = get_dataset_template(dataset_name)
+    except ValueError:
+        template = None
     cols_by_name: dict[str, list[object | None]] = {column: [] for column in fieldnames}
     for row in rows:
         for column in fieldnames:
             cols_by_name[column].append(row.get(column))
+
+    if template is not None:
+        target_suggestion = template.target_suggestion
+        column_descriptions = template.column_descriptions
+        suggested_questions = template.suggested_questions
+    else:
+        numeric_columns = [column for column, values in cols_by_name.items() if _infer_dtype(values) in {"int", "float"}]
+        target_suggestion = numeric_columns[-1] if numeric_columns else (fieldnames[-1] if fieldnames else "")
+        column_descriptions = {column: "Column from uploaded dataset." for column in fieldnames}
+        suggested_questions = [
+            "Which columns have the most missing values?",
+            "Which variables show unusual values or outliers?",
+            "What relationships are visible between key numeric columns?",
+            "Which chart best explains the main pattern in this dataset?",
+            "What decision can be supported by this analysis?",
+        ]
 
     return DatasetSummaryResponse(
         dataset_id=dataset_id,
         dataset_name=dataset_name,
         rows=len(rows),
         columns=len(fieldnames),
-        target_suggestion=template.target_suggestion,
+        target_suggestion=target_suggestion,
         difficulty=difficulty,
-        column_descriptions=template.column_descriptions,
+        column_descriptions=column_descriptions,
         data_types={column: _infer_dtype(values) for column, values in cols_by_name.items()},
         missing_summary={
             column: sum(1 for value in values if value is None)
             for column, values in cols_by_name.items()
         },
         preview=rows[:20],
-        suggested_questions=template.suggested_questions,
+        suggested_questions=suggested_questions,
     )
 
 
@@ -465,6 +486,43 @@ def _apply_noise(rows: list[dict[str, object | None]], fieldnames: list[str], no
             row[col] = round(value + jitter, 3)
 
 
+def _sanitize_dataset_name(raw_name: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_\- ]+", "", raw_name).strip().replace(" ", "_")
+    return cleaned[:80] if cleaned else "uploaded_dataset"
+
+
+def _decode_upload_bytes(content: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise HTTPException(status_code=422, detail="Unable to decode uploaded CSV file")
+
+
+def _parse_uploaded_csv(content: bytes) -> tuple[list[str], list[dict[str, object | None]]]:
+    text = _decode_upload_bytes(content)
+    sample = text[:4096]
+    delimiter = ","
+    try:
+        delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+    except Exception:
+        delimiter = ","
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    if reader.fieldnames is None:
+        raise HTTPException(status_code=422, detail="Uploaded CSV must include a header row")
+
+    rows: list[dict[str, object | None]] = []
+    for row in reader:
+        parsed: dict[str, object | None] = {}
+        for key in reader.fieldnames:
+            parsed[key] = _try_cast(row.get(key, ""))
+        rows.append(parsed)
+
+    return reader.fieldnames, rows
+
+
 @app.post("/api/datasets/generate", response_model=DatasetSummaryResponse)
 def generate_dataset(request: Request, payload: DatasetGenerateRequest) -> DatasetSummaryResponse:
     _enforce_generate_rate_limit(request)
@@ -523,6 +581,66 @@ def generate_dataset(request: Request, payload: DatasetGenerateRequest) -> Datas
         payload.difficulty,
         bundle.fieldnames,
         bundle.rows,
+    )
+
+
+@app.post("/api/datasets/upload", response_model=DatasetSummaryResponse)
+def upload_dataset(
+    request: Request,
+    file: UploadFile = File(...),
+    dataset_name: str | None = Form(default=None),
+) -> DatasetSummaryResponse:
+    _enforce_generate_rate_limit(request)
+
+    filename = file.filename or "uploaded_dataset.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=422, detail="Only CSV files are supported right now")
+
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Uploaded file is empty")
+    if len(content) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Uploaded file is too large (max 15 MB)")
+
+    fieldnames, rows = _parse_uploaded_csv(content)
+    if not fieldnames:
+        raise HTTPException(status_code=422, detail="CSV has no usable columns")
+
+    safe_name = _sanitize_dataset_name(dataset_name or Path(filename).stem)
+    dataset_id = uuid4().hex
+    csv_path = GENERATED_DIR / f"{dataset_id}.csv"
+
+    with csv_path.open("w", newline="", encoding="utf-8") as out_file:
+        writer = csv.DictWriter(out_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    save_dataset_record(
+        dataset_id=dataset_id,
+        dataset_name=safe_name,
+        csv_path=csv_path,
+        rows_count=len(rows),
+        columns_count=len(fieldnames),
+        difficulty="uploaded",
+        include_missing_values=False,
+        include_outliers=False,
+    )
+
+    version_number = get_next_dataset_version(safe_name)
+    save_dataset_version(
+        dataset_name=safe_name,
+        version_number=version_number,
+        dataset_id=dataset_id,
+        config_json=json.dumps({"source": "upload", "filename": filename}),
+        metrics_json=json.dumps({"rows": len(rows), "columns": len(fieldnames)}),
+    )
+
+    return _build_summary(
+        dataset_id=dataset_id,
+        dataset_name=safe_name,
+        difficulty="uploaded",
+        fieldnames=fieldnames,
+        rows=rows,
     )
 
 

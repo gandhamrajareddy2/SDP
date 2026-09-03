@@ -91,3 +91,22 @@ def test_progress_summary() -> None:
     summary = client.get('/api/progress/summary')
     assert summary.status_code == 200
     assert 'total_events' in summary.json()
+
+
+def test_upload_dataset_and_explore() -> None:
+    csv_content = 'city,population,score\nA,1000,7.5\nB,2000,8.1\n'
+    response = client.post(
+        '/api/datasets/upload',
+        data={'dataset_name': 'city_metrics'},
+        files={'file': ('city_metrics.csv', csv_content, 'text/csv')},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body['dataset_name'] == 'city_metrics'
+    assert body['rows'] == 2
+    assert body['columns'] == 3
+
+    dataset_id = body['dataset_id']
+    rows = client.get(f'/api/datasets/{dataset_id}/rows/paginated', params={'page': 1, 'page_size': 10})
+    assert rows.status_code == 200
+    assert rows.json()['total_rows'] == 2
