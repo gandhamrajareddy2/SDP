@@ -25,10 +25,10 @@ Learn -> Explore -> Clean -> Visualize -> Analyze -> Interpret -> Practice -> Ap
 - [x] Add quick actions wired to real routes.
 
 ### Phase 3: Data Explorer + Backend Pagination/Filtering
-- [ ] Add backend pagination for dataset rows.
-- [ ] Add backend filtering and sorting parameters.
-- [ ] Update Data Explorer tabs: Overview, Preview, Columns, Statistics, Missing, Duplicates, Outliers.
-- [ ] Frontend row table with server-side pagination/filter/search.
+- [x] Add backend pagination for dataset rows.
+- [x] Add backend filtering and sorting parameters.
+- [x] Update Data Explorer tabs: Overview, Preview, Columns, Statistics, Missing, Duplicates, Outliers.
+- [x] Frontend row table with server-side pagination/filter/search.
 
 ### Phase 4: Data Cleaning Lab
 - [ ] Add non-destructive cleaning workflows with action history and undo.
@@ -138,4 +138,4 @@ Learn -> Explore -> Clean -> Visualize -> Analyze -> Interpret -> Practice -> Ap
   - Mitigation: Preserve existing build commands and validate SPA fallback before rollout.
 
 ## Current Sprint Goal
-- Execute Phase 3 (Data Explorer + backend pagination/filtering) while preserving existing dataset generation and download flows.
+- Execute Phase 4 (Data Cleaning Lab) with non-destructive operations, action history, and undo.

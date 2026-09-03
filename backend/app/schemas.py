@@ -41,3 +41,33 @@ class DatasetRecordResponse(BaseModel):
     include_missing_values: bool
     include_outliers: bool
     created_at: str
+
+
+class PaginatedRowsResponse(BaseModel):
+    dataset_id: str
+    page: int
+    page_size: int
+    total_rows: int
+    total_pages: int
+    rows: list[dict]
+
+
+class NumericStats(BaseModel):
+    count: int
+    mean: float
+    median: float
+    min: float
+    max: float
+    std_dev: float
+
+
+class DatasetProfileResponse(BaseModel):
+    dataset_id: str
+    rows: int
+    columns: int
+    missing_cells: int
+    duplicate_rows: int
+    numeric_columns: list[str]
+    categorical_columns: list[str]
+    outlier_counts: dict[str, int]
+    numeric_stats: dict[str, NumericStats]

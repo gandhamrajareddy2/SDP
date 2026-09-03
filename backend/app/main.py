@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import math
+import statistics
 from pathlib import Path
 from uuid import uuid4
 
@@ -16,7 +18,14 @@ from .dataset_generator import (
     get_projects,
 )
 from .db import delete_dataset_record, get_dataset_record, init_db, list_dataset_records, save_dataset_record
-from .schemas import DatasetGenerateRequest, DatasetRecordResponse, DatasetSummaryResponse
+from .schemas import (
+    DatasetGenerateRequest,
+    DatasetProfileResponse,
+    DatasetRecordResponse,
+    DatasetSummaryResponse,
+    NumericStats,
+    PaginatedRowsResponse,
+)
 
 app = FastAPI(title="DataScience Lab API", version="0.1.0")
 
@@ -130,6 +139,46 @@ def _build_summary(
     )
 
 
+def _search_match(row: dict[str, object | None], query: str) -> bool:
+    if not query.strip():
+        return True
+    q = query.strip().lower()
+    return any(q in str(value).lower() for value in row.values() if value is not None)
+
+
+def _missing_match(value: object | None, only_missing: bool) -> bool:
+    if not only_missing:
+        return True
+    return value is None
+
+
+def _typed_number(value: object | None) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value))
+    except ValueError:
+        return None
+
+
+def _to_hashable_row(row: dict[str, object | None], fieldnames: list[str]) -> tuple[object | None, ...]:
+    return tuple(row.get(field) for field in fieldnames)
+
+
+def _count_outliers(values: list[float]) -> int:
+    if len(values) < 4:
+        return 0
+    sorted_values = sorted(values)
+    q1 = sorted_values[int(len(sorted_values) * 0.25)]
+    q3 = sorted_values[int(len(sorted_values) * 0.75)]
+    iqr = q3 - q1
+    low = q1 - 1.5 * iqr
+    high = q3 + 1.5 * iqr
+    return sum(1 for value in sorted_values if value < low or value > high)
+
+
 @app.post("/api/datasets/generate", response_model=DatasetSummaryResponse)
 def generate_dataset(payload: DatasetGenerateRequest) -> DatasetSummaryResponse:
     bundle = generate_dataset_bundle(
@@ -192,6 +241,158 @@ def get_dataset_rows(dataset_id: str) -> dict[str, object]:
 
     _, rows = _load_rows(csv_path)
     return {"dataset_id": dataset_id, "rows": rows}
+
+
+@app.get("/api/datasets/{dataset_id}/rows/paginated", response_model=PaginatedRowsResponse)
+def get_dataset_rows_paginated(
+    dataset_id: str,
+    page: int = 1,
+    page_size: int = 50,
+    search: str = "",
+    sort_by: str = "",
+    sort_dir: str = "asc",
+    filter_column: str = "",
+    filter_value: str = "",
+    numeric_min: float | None = None,
+    numeric_max: float | None = None,
+    missing_only: bool = False,
+) -> PaginatedRowsResponse:
+    if page < 1:
+        raise HTTPException(status_code=422, detail="page must be >= 1")
+    if page_size < 1 or page_size > 200:
+        raise HTTPException(status_code=422, detail="page_size must be between 1 and 200")
+    if sort_dir not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="sort_dir must be asc or desc")
+
+    row = get_dataset_record(dataset_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    csv_path = Path(row["csv_path"])
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file missing")
+
+    fieldnames, rows = _load_rows(csv_path)
+    filtered: list[dict[str, object | None]] = []
+    for item in rows:
+        if not _search_match(item, search):
+            continue
+        if filter_column:
+            if filter_column not in fieldnames:
+                raise HTTPException(status_code=422, detail=f"Unknown filter_column: {filter_column}")
+            target = item.get(filter_column)
+            if not _missing_match(target, missing_only):
+                continue
+            if filter_value and target is not None and filter_value.lower() not in str(target).lower():
+                continue
+            if numeric_min is not None or numeric_max is not None:
+                num = _typed_number(target)
+                if num is None:
+                    continue
+                if numeric_min is not None and num < numeric_min:
+                    continue
+                if numeric_max is not None and num > numeric_max:
+                    continue
+        filtered.append(item)
+
+    if sort_by:
+        if sort_by not in fieldnames:
+            raise HTTPException(status_code=422, detail=f"Unknown sort_by column: {sort_by}")
+
+        def sort_key(item: dict[str, object | None]) -> tuple[int, object]:
+            value = item.get(sort_by)
+            if value is None:
+                return (1, "")
+            numeric_value = _typed_number(value)
+            if numeric_value is not None:
+                return (0, numeric_value)
+            return (0, str(value).lower())
+
+        filtered.sort(key=sort_key, reverse=(sort_dir == "desc"))
+
+    total_rows = len(filtered)
+    total_pages = max(1, math.ceil(total_rows / page_size))
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_rows = filtered[start:end]
+
+    return PaginatedRowsResponse(
+        dataset_id=dataset_id,
+        page=page,
+        page_size=page_size,
+        total_rows=total_rows,
+        total_pages=total_pages,
+        rows=page_rows,
+    )
+
+
+@app.get("/api/datasets/{dataset_id}/profile", response_model=DatasetProfileResponse)
+def get_dataset_profile(dataset_id: str) -> DatasetProfileResponse:
+    row = get_dataset_record(dataset_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    csv_path = Path(row["csv_path"])
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file missing")
+
+    fieldnames, rows = _load_rows(csv_path)
+    columns_map: dict[str, list[object | None]] = {name: [] for name in fieldnames}
+    row_seen: set[tuple[object | None, ...]] = set()
+    duplicate_rows = 0
+    missing_cells = 0
+
+    for item in rows:
+        row_tuple = _to_hashable_row(item, fieldnames)
+        if row_tuple in row_seen:
+            duplicate_rows += 1
+        else:
+            row_seen.add(row_tuple)
+
+        for col in fieldnames:
+            value = item.get(col)
+            columns_map[col].append(value)
+            if value is None:
+                missing_cells += 1
+
+    numeric_columns: list[str] = []
+    categorical_columns: list[str] = []
+    outlier_counts: dict[str, int] = {}
+    numeric_stats: dict[str, NumericStats] = {}
+
+    for col, values in columns_map.items():
+        nums = [_typed_number(v) for v in values]
+        numeric_values = [v for v in nums if v is not None]
+        if len(numeric_values) == 0:
+            categorical_columns.append(col)
+            continue
+
+        numeric_columns.append(col)
+        outlier_counts[col] = _count_outliers(numeric_values)
+        if len(numeric_values) == 1:
+            std_dev = 0.0
+        else:
+            std_dev = float(statistics.stdev(numeric_values))
+        numeric_stats[col] = NumericStats(
+            count=len(numeric_values),
+            mean=round(float(statistics.mean(numeric_values)), 4),
+            median=round(float(statistics.median(numeric_values)), 4),
+            min=round(float(min(numeric_values)), 4),
+            max=round(float(max(numeric_values)), 4),
+            std_dev=round(std_dev, 4),
+        )
+
+    return DatasetProfileResponse(
+        dataset_id=dataset_id,
+        rows=len(rows),
+        columns=len(fieldnames),
+        missing_cells=missing_cells,
+        duplicate_rows=duplicate_rows,
+        numeric_columns=numeric_columns,
+        categorical_columns=categorical_columns,
+        outlier_counts=outlier_counts,
+        numeric_stats=numeric_stats,
+    )
 
 
 @app.get("/api/datasets/{dataset_id}/download")

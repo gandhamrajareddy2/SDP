@@ -8,6 +8,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const LearnPage = lazy(() => import('./pages/LearnPage'))
 const DatasetsPage = lazy(() => import('./pages/DatasetsPage'))
 const DataExplorerPage = lazy(() => import('./pages/DataExplorerPage'))
+const LegacyDataExplorerPage = lazy(() => import('./pages/LegacyDataExplorerPage'))
 const DataCleaningLabPage = lazy(() => import('./pages/DataCleaningLabPage'))
 const VisualizationLabPage = lazy(() => import('./pages/VisualizationLabPage'))
 const StatisticsLabPage = lazy(() => import('./pages/StatisticsLabPage'))
@@ -49,6 +50,7 @@ export default function PlatformApp() {
             <Route path="/learn" element={<LearnPage />} />
             <Route path="/datasets" element={<DatasetsPage />} />
             <Route path="/data-explorer" element={<DataExplorerPage />} />
+            <Route path="/data-explorer/legacy" element={<LegacyDataExplorerPage />} />
             <Route path="/data-cleaning-lab" element={<DataCleaningLabPage />} />
             <Route path="/visualization-lab" element={<VisualizationLabPage />} />
             <Route path="/statistics-lab" element={<StatisticsLabPage />} />
