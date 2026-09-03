@@ -17,7 +17,7 @@ import {
 import './App.css'
 
 type Project = {
-  id: string
+  id: DatasetId
   title: string
   description: string
 }
