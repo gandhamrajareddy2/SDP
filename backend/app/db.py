@@ -29,6 +29,49 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dataset_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dataset_name TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                dataset_id TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                metrics_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(dataset_name, version_number)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analysis_sessions (
+                session_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                dataset_id TEXT,
+                state_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS progress_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                module TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                score REAL,
+                metadata_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_datasets_created_at ON datasets(created_at DESC)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dataset_versions_name_version ON dataset_versions(dataset_name, version_number DESC)"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_progress_events_module ON progress_events(module)")
         conn.commit()
     finally:
         conn.close()
@@ -109,6 +152,178 @@ def list_dataset_records(limit: int = 20) -> list[sqlite3.Row]:
             LIMIT ?
             """,
             (limit,),
+        ).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def get_next_dataset_version(dataset_name: str) -> int:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(version_number), 0) AS max_version FROM dataset_versions WHERE dataset_name = ?",
+            (dataset_name,),
+        ).fetchone()
+        return int(row["max_version"]) + 1
+    finally:
+        conn.close()
+
+
+def save_dataset_version(
+    dataset_name: str,
+    version_number: int,
+    dataset_id: str,
+    config_json: str,
+    metrics_json: str,
+) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO dataset_versions (
+                dataset_name,
+                version_number,
+                dataset_id,
+                config_json,
+                metrics_json,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                dataset_name,
+                version_number,
+                dataset_id,
+                config_json,
+                metrics_json,
+                datetime.now(tz=timezone.utc).isoformat(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_dataset_versions(dataset_name: str, limit: int = 20) -> list[sqlite3.Row]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT dataset_name, version_number, dataset_id, config_json, metrics_json, created_at
+            FROM dataset_versions
+            WHERE dataset_name = ?
+            ORDER BY version_number DESC
+            LIMIT ?
+            """,
+            (dataset_name, limit),
+        ).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def create_analysis_session(session_id: str, name: str, dataset_id: str | None, state_json: str) -> None:
+    now = datetime.now(tz=timezone.utc).isoformat()
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO analysis_sessions (session_id, name, dataset_id, state_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (session_id, name, dataset_id, state_json, now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_analysis_session(session_id: str, name: str, dataset_id: str | None, state_json: str) -> bool:
+    conn = _connect()
+    try:
+        result = conn.execute(
+            """
+            UPDATE analysis_sessions
+            SET name = ?, dataset_id = ?, state_json = ?, updated_at = ?
+            WHERE session_id = ?
+            """,
+            (name, dataset_id, state_json, datetime.now(tz=timezone.utc).isoformat(), session_id),
+        )
+        conn.commit()
+        return result.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_analysis_sessions(limit: int = 50) -> list[sqlite3.Row]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT session_id, name, dataset_id, state_json, created_at, updated_at
+            FROM analysis_sessions
+            ORDER BY datetime(updated_at) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def get_analysis_session(session_id: str) -> sqlite3.Row | None:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT session_id, name, dataset_id, state_json, created_at, updated_at
+            FROM analysis_sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        return row
+    finally:
+        conn.close()
+
+
+def delete_analysis_session(session_id: str) -> bool:
+    conn = _connect()
+    try:
+        result = conn.execute("DELETE FROM analysis_sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+        return result.rowcount > 0
+    finally:
+        conn.close()
+
+
+def log_progress_event(module: str, event_type: str, score: float | None, metadata_json: str) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO progress_events (module, event_type, score, metadata_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (module, event_type, score, metadata_json, datetime.now(tz=timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def summarize_progress_events() -> list[sqlite3.Row]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT module, COUNT(*) AS event_count
+            FROM progress_events
+            GROUP BY module
+            ORDER BY event_count DESC
+            """
         ).fetchall()
         return rows
     finally:

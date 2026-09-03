@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import ModulePage from '../components/ModulePage'
 import { fetchRecentDatasets } from '../services/datasets'
+import { fetchProgressSummary, listSessions } from '../services/platform'
 import { getLastDatasetTitle, getLastModule } from '../services/studentState'
 
 function humanizeModule(pathname: string | null): string {
@@ -25,6 +26,14 @@ export default function DashboardPage() {
     queryKey: ['recent-datasets', 'dashboard'],
     queryFn: () => fetchRecentDatasets(6),
   })
+  const progressQuery = useQuery({
+    queryKey: ['progress-summary', 'dashboard'],
+    queryFn: fetchProgressSummary,
+  })
+  const sessionsQuery = useQuery({
+    queryKey: ['sessions', 'dashboard'],
+    queryFn: () => listSessions(20),
+  })
 
   return (
     <ModulePage
@@ -39,7 +48,9 @@ export default function DashboardPage() {
           <h2>Continue Learning</h2>
           <p>Current dataset: {lastDataset}</p>
           <p>Current learning activity: {lastModule}</p>
-          <p>Progress tracking backend is scheduled in Phase 11. Current state combines local session + persisted datasets.</p>
+          <p>Progress tracking now combines local activity signals, persisted sessions, and logged module events.</p>
+          <p>Total progress events: {progressQuery.data?.total_events ?? 0}</p>
+          <p>Saved sessions: {sessionsQuery.data?.length ?? 0}</p>
           <div className="dashboard-recent">
             <h3>Recent datasets</h3>
             {recentDatasetsQuery.isLoading && <p>Loading recent dataset history...</p>}

@@ -31,51 +31,51 @@ Learn -> Explore -> Clean -> Visualize -> Analyze -> Interpret -> Practice -> Ap
 - [x] Frontend row table with server-side pagination/filter/search.
 
 ### Phase 4: Data Cleaning Lab
-- [ ] Add non-destructive cleaning workflows with action history and undo.
-- [ ] Maintain original dataset and cleaned version snapshots.
-- [ ] Add educational explanation per operation.
+- [x] Add non-destructive cleaning workflows with action history and undo.
+- [x] Maintain original dataset and cleaned version snapshots.
+- [x] Add educational explanation per operation.
 
 ### Phase 5: Visualization Lab 2.0
-- [ ] Expand chart catalog with analysis-purpose-first mapping.
-- [ ] Implement chart configuration controls and invalid-combination handling.
-- [ ] Keep performance constraints and responsive behavior.
+- [x] Expand chart catalog with analysis-purpose-first mapping.
+- [x] Implement chart configuration controls and invalid-combination handling.
+- [x] Keep performance constraints and responsive behavior.
 
 ### Phase 6: Chart Recommendation Engine
-- [ ] Build “Help Me Choose a Chart” guided recommender based on objective + variable types.
-- [ ] Include reason, required variables, what to look for, common mistakes.
+- [x] Build “Help Me Choose a Chart” guided recommender based on objective + variable types.
+- [x] Include reason, required variables, what to look for, common mistakes.
 
 ### Phase 7: Statistics Lab
-- [ ] Add statistics definitions + formulas + interpretation with progressive disclosure.
-- [ ] Link directly to selected dataset and selected columns.
+- [x] Add statistics definitions + formulas + interpretation with progressive disclosure.
+- [x] Link directly to selected dataset and selected columns.
 
 ### Phase 8: Insights Lab + Interpretation Checker 2.0
-- [ ] Expand interpretation evaluation dimensions and structured feedback.
-- [ ] Preserve reasoning-first guidance (no answer dumping).
+- [x] Expand interpretation evaluation dimensions and structured feedback.
+- [x] Preserve reasoning-first guidance (no answer dumping).
 
 ### Phase 9: Practice + Challenges
-- [ ] Add question engine and challenge flow with rubric-based scoring.
-- [ ] Track actual student progress events.
+- [x] Add question engine and challenge flow with rubric-based scoring.
+- [x] Track actual student progress events.
 
 ### Phase 10: Projects + Learning Path
-- [ ] Build guided and open-ended mini projects.
-- [ ] Visual learning path with configurable progression states.
+- [x] Build guided and open-ended mini projects.
+- [x] Visual learning path with configurable progression states.
 
 ### Phase 11: Saved Sessions + Dataset Versioning
-- [ ] Add save/resume/rename/duplicate/delete sessions.
-- [ ] Add dataset version records and compare view.
+- [x] Add save/resume/rename/duplicate/delete sessions.
+- [x] Add dataset version records and compare view.
 
 ### Phase 12: Export
-- [ ] Add chart PNG export.
-- [ ] Add dataset CSV export enhancements.
-- [ ] Add PDF analysis report export.
+- [x] Add chart PNG export.
+- [x] Add dataset CSV export enhancements.
+- [x] Add PDF analysis report export.
 
 ### Phase 13: Accessibility + Responsive + Performance
-- [ ] Accessibility audit and fixes (keyboard, ARIA, contrast, focus).
-- [ ] Mobile/tablet layout optimization.
-- [ ] Performance tuning (lazy routes, query caching, memoization, render optimization).
+- [ ] Accessibility audit and fixes (keyboard, ARIA, contrast, focus). Baseline improvements applied; full audit pending.
+- [x] Mobile/tablet layout optimization.
+- [x] Performance tuning (lazy routes, query caching, memoization, render optimization).
 
 ### Phase 14: Tests + Production Verification
-- [ ] Add backend automated tests (API, generator, validation, pagination/filtering, sessions).
+- [x] Add backend automated tests (API, generator, validation, pagination/filtering, sessions).
 - [ ] Add frontend tests for route navigation and key workflows.
 - [ ] Validate Render production behavior end to end.
 
@@ -138,4 +138,4 @@ Learn -> Explore -> Clean -> Visualize -> Analyze -> Interpret -> Practice -> Ap
   - Mitigation: Preserve existing build commands and validate SPA fallback before rollout.
 
 ## Current Sprint Goal
-- Execute Phase 4 (Data Cleaning Lab) with non-destructive operations, action history, and undo.
+- Close remaining verification gaps: frontend automated tests and Render production end-to-end validation.

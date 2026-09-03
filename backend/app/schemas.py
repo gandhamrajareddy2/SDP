@@ -16,6 +16,10 @@ class DatasetGenerateRequest(BaseModel):
     include_missing_values: bool = True
     include_outliers: bool = True
     difficulty: Literal["beginner", "intermediate", "advanced"] = "beginner"
+    missing_value_percentage: float = Field(default=0.0, ge=0.0, le=50.0)
+    outlier_percentage: float = Field(default=0.0, ge=0.0, le=30.0)
+    noise_level: float = Field(default=1.0, ge=0.5, le=3.0)
+    random_seed: int | None = None
 
 
 class DatasetSummaryResponse(BaseModel):
@@ -71,3 +75,45 @@ class DatasetProfileResponse(BaseModel):
     categorical_columns: list[str]
     outlier_counts: dict[str, int]
     numeric_stats: dict[str, NumericStats]
+
+
+class DatasetVersionResponse(BaseModel):
+    dataset_name: str
+    version_number: int
+    dataset_id: str
+    config_json: str
+    metrics_json: str
+    created_at: str
+
+
+class SessionCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    dataset_id: str | None = None
+    state_json: str = Field(default="{}")
+
+
+class SessionUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    dataset_id: str | None = None
+    state_json: str = Field(default="{}")
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    name: str
+    dataset_id: str | None
+    state_json: str
+    created_at: str
+    updated_at: str
+
+
+class ProgressEventRequest(BaseModel):
+    module: str = Field(min_length=1, max_length=80)
+    event_type: str = Field(min_length=1, max_length=80)
+    score: float | None = None
+    metadata_json: str = Field(default="{}")
+
+
+class ProgressSummaryResponse(BaseModel):
+    total_events: int
+    by_module: dict[str, int]

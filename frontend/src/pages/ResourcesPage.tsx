@@ -1,16 +1,26 @@
+import { Link } from 'react-router-dom'
 import ModulePage from '../components/ModulePage'
+import { resourcesCatalog } from '../features/learningContent'
 
 export default function ResourcesPage() {
   return (
     <ModulePage
       title="Resources"
-      purpose="Provide references, reading support, and practical guidance for lab activities."
-      status="planned"
-      nextActionLabel="Continue with Learn"
-      nextActionTo="/learn"
+      purpose="Use practical references for cleaning, visualization, and interpretation decisions."
+      status="available"
+      nextActionLabel="Track Progress"
+      nextActionTo="/progress"
     >
-      <section className="card">
-        <p>Resource packs and reference links will be structured in Phase 10 as metadata-driven content.</p>
+      <section className="card dataset-grid">
+        {resourcesCatalog.map((resource) => (
+          <article key={resource.title} className="dataset-card">
+            <h3>{resource.title}</h3>
+            <p>{resource.description}</p>
+            <Link className="text-link" to={resource.targetRoute}>
+              Open Resource Module
+            </Link>
+          </article>
+        ))}
       </section>
     </ModulePage>
   )

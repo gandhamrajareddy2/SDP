@@ -34,6 +34,11 @@ export default function DataExplorerPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>('beginner')
   const [includeMissingValues, setIncludeMissingValues] = useState(true)
   const [includeOutliers, setIncludeOutliers] = useState(true)
+  const [advancedMode, setAdvancedMode] = useState(false)
+  const [missingPercentage, setMissingPercentage] = useState(0)
+  const [outlierPercentage, setOutlierPercentage] = useState(0)
+  const [noiseLevel, setNoiseLevel] = useState(1)
+  const [randomSeed, setRandomSeed] = useState('')
   const [datasetSummary, setDatasetSummary] = useState<DatasetSummary | null>(null)
   const [statusMessage, setStatusMessage] = useState('Generate a dataset to start exploration.')
   const [activeTab, setActiveTab] = useState<ExplorerTab>('overview')
@@ -144,6 +149,10 @@ export default function DataExplorerPage() {
       include_missing_values: includeMissingValues,
       include_outliers: includeOutliers,
       difficulty,
+      missing_value_percentage: advancedMode ? missingPercentage : 0,
+      outlier_percentage: advancedMode ? outlierPercentage : 0,
+      noise_level: advancedMode ? noiseLevel : 1,
+      random_seed: randomSeed.trim() ? Number(randomSeed) : undefined,
     })
   }
 
@@ -218,7 +227,50 @@ export default function DataExplorerPage() {
             />
             Include outliers
           </label>
+          <label className="toggle">
+            <input type="checkbox" checked={advancedMode} onChange={(event) => setAdvancedMode(event.target.checked)} />
+            Advanced mode
+          </label>
         </div>
+        {advancedMode && (
+          <div className="form-grid">
+            <label>
+              Missing value %
+              <input
+                type="number"
+                value={missingPercentage}
+                min={0}
+                max={50}
+                onChange={(event) => setMissingPercentage(Number(event.target.value) || 0)}
+              />
+            </label>
+            <label>
+              Outlier %
+              <input
+                type="number"
+                value={outlierPercentage}
+                min={0}
+                max={30}
+                onChange={(event) => setOutlierPercentage(Number(event.target.value) || 0)}
+              />
+            </label>
+            <label>
+              Noise level
+              <input
+                type="number"
+                step="0.1"
+                value={noiseLevel}
+                min={0.5}
+                max={3}
+                onChange={(event) => setNoiseLevel(Number(event.target.value) || 1)}
+              />
+            </label>
+            <label>
+              Random seed
+              <input value={randomSeed} onChange={(event) => setRandomSeed(event.target.value)} placeholder="Optional integer" />
+            </label>
+          </div>
+        )}
         <div className="button-row">
           <button type="button" className="primary" onClick={handleGenerate}>
             {generateMutation.isPending ? 'Generating...' : 'Generate'}

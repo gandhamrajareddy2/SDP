@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import csv
+import json
+import logging
 import math
+import random
 import statistics
+import time
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
@@ -17,17 +21,46 @@ from .dataset_generator import (
     get_dataset_template,
     get_projects,
 )
-from .db import delete_dataset_record, get_dataset_record, init_db, list_dataset_records, save_dataset_record
+from .db import (
+    create_analysis_session,
+    delete_analysis_session,
+    delete_dataset_record,
+    get_analysis_session,
+    get_dataset_record,
+    get_next_dataset_version,
+    init_db,
+    list_analysis_sessions,
+    list_dataset_records,
+    list_dataset_versions,
+    log_progress_event,
+    save_dataset_record,
+    save_dataset_version,
+    summarize_progress_events,
+    update_analysis_session,
+)
 from .schemas import (
     DatasetGenerateRequest,
     DatasetProfileResponse,
     DatasetRecordResponse,
     DatasetSummaryResponse,
+    DatasetVersionResponse,
     NumericStats,
     PaginatedRowsResponse,
+    ProgressEventRequest,
+    ProgressSummaryResponse,
+    SessionCreateRequest,
+    SessionResponse,
+    SessionUpdateRequest,
 )
 
 app = FastAPI(title="DataScience Lab API", version="0.1.0")
+logger = logging.getLogger("datascience_lab")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+_generate_rate_window_secs = 60
+_generate_rate_limit = 30
+_ip_call_timestamps: dict[str, list[float]] = {}
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,9 +76,54 @@ def startup() -> None:
     init_db()
 
 
+@app.middleware("http")
+async def add_request_context(request: Request, call_next):
+    request_id = request.headers.get("x-request-id", uuid4().hex)
+    started_at = time.time()
+    response = await call_next(request)
+    elapsed_ms = round((time.time() - started_at) * 1000, 2)
+    response.headers["x-request-id"] = request_id
+    logger.info(
+        json.dumps(
+            {
+                "event": "http_request",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "elapsed_ms": elapsed_ms,
+            }
+        )
+    )
+    return response
+
+
+def _enforce_generate_rate_limit(request: Request) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    history = _ip_call_timestamps.get(client_ip, [])
+    cutoff = now - _generate_rate_window_secs
+    recent = [stamp for stamp in history if stamp >= cutoff]
+    if len(recent) >= _generate_rate_limit:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded for dataset generation. Try again shortly.")
+    recent.append(now)
+    _ip_call_timestamps[client_ip] = recent
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/readiness")
+def readiness() -> dict[str, str]:
+    if not GENERATED_DIR.exists():
+        raise HTTPException(status_code=503, detail="Generated directory missing")
+    try:
+        _ = list_dataset_records(limit=1)
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
+    return {"status": "ready"}
 
 
 @app.get("/api/projects")
@@ -70,6 +148,154 @@ def list_datasets(limit: int = 20) -> list[DatasetRecordResponse]:
         )
         for row in rows
     ]
+
+
+@app.get("/api/datasets/{dataset_name}/versions", response_model=list[DatasetVersionResponse])
+def versions(dataset_name: str, limit: int = 20) -> list[DatasetVersionResponse]:
+    safe_limit = max(1, min(limit, 100))
+    rows = list_dataset_versions(dataset_name=dataset_name, limit=safe_limit)
+    return [
+        DatasetVersionResponse(
+            dataset_name=row["dataset_name"],
+            version_number=row["version_number"],
+            dataset_id=row["dataset_id"],
+            config_json=row["config_json"],
+            metrics_json=row["metrics_json"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+@app.get("/api/sessions", response_model=list[SessionResponse])
+def list_sessions(limit: int = 50) -> list[SessionResponse]:
+    safe_limit = max(1, min(limit, 200))
+    rows = list_analysis_sessions(limit=safe_limit)
+    return [
+        SessionResponse(
+            session_id=row["session_id"],
+            name=row["name"],
+            dataset_id=row["dataset_id"],
+            state_json=row["state_json"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+        for row in rows
+    ]
+
+
+@app.post("/api/sessions", response_model=SessionResponse)
+def create_session(payload: SessionCreateRequest) -> SessionResponse:
+    session_id = uuid4().hex
+    create_analysis_session(
+        session_id=session_id,
+        name=payload.name,
+        dataset_id=payload.dataset_id,
+        state_json=payload.state_json,
+    )
+    row = get_analysis_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=500, detail="Session creation failed")
+    return SessionResponse(
+        session_id=row["session_id"],
+        name=row["name"],
+        dataset_id=row["dataset_id"],
+        state_json=row["state_json"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+@app.get("/api/sessions/{session_id}", response_model=SessionResponse)
+def get_session(session_id: str) -> SessionResponse:
+    row = get_analysis_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return SessionResponse(
+        session_id=row["session_id"],
+        name=row["name"],
+        dataset_id=row["dataset_id"],
+        state_json=row["state_json"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+@app.put("/api/sessions/{session_id}", response_model=SessionResponse)
+def update_session(session_id: str, payload: SessionUpdateRequest) -> SessionResponse:
+    updated = update_analysis_session(
+        session_id=session_id,
+        name=payload.name,
+        dataset_id=payload.dataset_id,
+        state_json=payload.state_json,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found")
+    row = get_analysis_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return SessionResponse(
+        session_id=row["session_id"],
+        name=row["name"],
+        dataset_id=row["dataset_id"],
+        state_json=row["state_json"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+@app.post("/api/sessions/{session_id}/duplicate", response_model=SessionResponse)
+def duplicate_session(session_id: str) -> SessionResponse:
+    row = get_analysis_session(session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    new_session_id = uuid4().hex
+    create_analysis_session(
+        session_id=new_session_id,
+        name=f"{row['name']} (Copy)",
+        dataset_id=row["dataset_id"],
+        state_json=row["state_json"],
+    )
+    copy_row = get_analysis_session(new_session_id)
+    if copy_row is None:
+        raise HTTPException(status_code=500, detail="Session duplication failed")
+    return SessionResponse(
+        session_id=copy_row["session_id"],
+        name=copy_row["name"],
+        dataset_id=copy_row["dataset_id"],
+        state_json=copy_row["state_json"],
+        created_at=copy_row["created_at"],
+        updated_at=copy_row["updated_at"],
+    )
+
+
+@app.delete("/api/sessions/{session_id}")
+def remove_session(session_id: str) -> dict[str, str]:
+    deleted = delete_analysis_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"status": "deleted"}
+
+
+@app.post("/api/progress/events")
+def create_progress_event(payload: ProgressEventRequest) -> dict[str, str]:
+    log_progress_event(
+        module=payload.module,
+        event_type=payload.event_type,
+        score=payload.score,
+        metadata_json=payload.metadata_json,
+    )
+    return {"status": "logged"}
+
+
+@app.get("/api/progress/summary", response_model=ProgressSummaryResponse)
+def progress_summary() -> ProgressSummaryResponse:
+    rows = summarize_progress_events()
+    by_module = {row["module"]: int(row["event_count"]) for row in rows}
+    return ProgressSummaryResponse(
+        total_events=sum(by_module.values()),
+        by_module=by_module,
+    )
 
 
 def _try_cast(value: str) -> object | None:
@@ -179,15 +405,86 @@ def _count_outliers(values: list[float]) -> int:
     return sum(1 for value in sorted_values if value < low or value > high)
 
 
+def _apply_advanced_missing(
+    rows: list[dict[str, object | None]],
+    fieldnames: list[str],
+    missing_percentage: float,
+    rng: random.Random,
+) -> None:
+    if missing_percentage <= 0:
+        return
+    editable_columns = [col for col in fieldnames if not col.endswith("_id") and col != "record_id"]
+    if not editable_columns:
+        return
+    total_cells = len(rows) * len(editable_columns)
+    cells_to_null = int(total_cells * (missing_percentage / 100.0))
+    for _ in range(cells_to_null):
+        row = rows[rng.randrange(len(rows))]
+        col = editable_columns[rng.randrange(len(editable_columns))]
+        row[col] = None
+
+
+def _apply_advanced_outliers(
+    rows: list[dict[str, object | None]],
+    fieldnames: list[str],
+    outlier_percentage: float,
+    noise_level: float,
+    rng: random.Random,
+) -> None:
+    if outlier_percentage <= 0:
+        return
+    numeric_columns: list[str] = []
+    for col in fieldnames:
+        values = [_typed_number(row.get(col)) for row in rows]
+        if any(value is not None for value in values):
+            numeric_columns.append(col)
+    if not numeric_columns:
+        return
+
+    outlier_rows_count = max(1, int(len(rows) * (outlier_percentage / 100.0)))
+    chosen_indices = rng.sample(range(len(rows)), min(outlier_rows_count, len(rows)))
+    for idx in chosen_indices:
+        row = rows[idx]
+        col = numeric_columns[rng.randrange(len(numeric_columns))]
+        value = _typed_number(row.get(col))
+        if value is None:
+            continue
+        perturbation = rng.gauss(0, max(1.5, abs(value) * 0.12 * noise_level))
+        row[col] = round(value + perturbation, 3)
+
+
+def _apply_noise(rows: list[dict[str, object | None]], fieldnames: list[str], noise_level: float, rng: random.Random) -> None:
+    if abs(noise_level - 1.0) < 1e-9:
+        return
+    for row in rows:
+        for col in fieldnames:
+            value = _typed_number(row.get(col))
+            if value is None or col.endswith("_id") or col == "record_id":
+                continue
+            jitter = rng.gauss(0, max(0.05, abs(value) * 0.01 * noise_level))
+            row[col] = round(value + jitter, 3)
+
+
 @app.post("/api/datasets/generate", response_model=DatasetSummaryResponse)
-def generate_dataset(payload: DatasetGenerateRequest) -> DatasetSummaryResponse:
+def generate_dataset(request: Request, payload: DatasetGenerateRequest) -> DatasetSummaryResponse:
+    _enforce_generate_rate_limit(request)
+    rng = random.Random(payload.random_seed)
     bundle = generate_dataset_bundle(
         dataset=payload.dataset,
         n=payload.num_records,
         include_missing_values=payload.include_missing_values,
         include_outliers=payload.include_outliers,
         difficulty=payload.difficulty,
+        seed=payload.random_seed,
     )
+    if payload.include_missing_values and payload.missing_value_percentage > 0:
+        _apply_advanced_missing(bundle.rows, bundle.fieldnames, payload.missing_value_percentage, rng)
+
+    if payload.include_outliers and payload.outlier_percentage > 0:
+        _apply_advanced_outliers(bundle.rows, bundle.fieldnames, payload.outlier_percentage, payload.noise_level, rng)
+
+    _apply_noise(bundle.rows, bundle.fieldnames, payload.noise_level, rng)
+
     dataset_id = uuid4().hex
     csv_path = GENERATED_DIR / f"{dataset_id}.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as file:
@@ -204,6 +501,20 @@ def generate_dataset(payload: DatasetGenerateRequest) -> DatasetSummaryResponse:
         difficulty=payload.difficulty,
         include_missing_values=payload.include_missing_values,
         include_outliers=payload.include_outliers,
+    )
+
+    version_number = get_next_dataset_version(payload.dataset)
+    save_dataset_version(
+        dataset_name=payload.dataset,
+        version_number=version_number,
+        dataset_id=dataset_id,
+        config_json=json.dumps(payload.model_dump()),
+        metrics_json=json.dumps(
+            {
+                "rows": len(bundle.rows),
+                "columns": len(bundle.fieldnames),
+            }
+        ),
     )
 
     return _build_summary(

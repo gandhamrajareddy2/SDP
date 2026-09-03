@@ -1,21 +1,16 @@
 import ModulePage from '../components/ModulePage'
-
-const modules = [
-  '01 Data Literacy',
-  '02 Understanding Datasets',
-  '03 Data Types',
-  '04 Data Cleaning',
-  '05 Missing Values',
-  '06 Outliers',
-  '07 Descriptive Statistics',
-  '08 Data Visualization',
-  '09 Correlation',
-  '10 Interpretation',
-  '11 Data-to-Decision',
-  '12 Introduction to Predictive Analytics',
-]
+import { learningModules } from '../features/learningContent'
+import { logProgressEvent } from '../services/platform'
 
 export default function LearnPage() {
+  const markComplete = (moduleId: string) => {
+    void logProgressEvent({
+      module: 'learn',
+      event_type: 'module_completed',
+      metadata_json: JSON.stringify({ moduleId }),
+    })
+  }
+
   return (
     <ModulePage
       title="Learn"
@@ -26,11 +21,21 @@ export default function LearnPage() {
     >
       <section className="card">
         <h2>Learning Modules</h2>
-        <ul className="simple-list">
-          {modules.map((item) => (
-            <li key={item}>{item}</li>
+        <div className="dataset-grid">
+          {learningModules.map((item) => (
+            <article key={item.id} className="dataset-card">
+              <h3>{item.title}</h3>
+              <p>Concept: {item.concept}</p>
+              <p>Interactive activity: {item.activity}</p>
+              <p>Key takeaway: {item.takeaway}</p>
+              <div className="button-row">
+                <button type="button" className="ghost" onClick={() => markComplete(item.id)}>
+                  Mark Completed
+                </button>
+              </div>
+            </article>
           ))}
-        </ul>
+        </div>
         <p>Each module will include concept, example, interactive activity, reflection, practice, and key takeaway.</p>
       </section>
     </ModulePage>

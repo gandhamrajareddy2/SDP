@@ -24,6 +24,10 @@ export type DatasetPayload = {
   include_missing_values: boolean
   include_outliers: boolean
   difficulty: Difficulty
+  missing_value_percentage?: number
+  outlier_percentage?: number
+  noise_level?: number
+  random_seed?: number
 }
 
 export type PaginatedRowsResponse = {
@@ -32,6 +36,11 @@ export type PaginatedRowsResponse = {
   page_size: number
   total_rows: number
   total_pages: number
+  rows: DataRow[]
+}
+
+export type FullRowsResponse = {
+  dataset_id: string
   rows: DataRow[]
 }
 
@@ -90,5 +99,10 @@ export async function fetchDatasetRowsPaginated(
 
 export async function fetchDatasetProfile(datasetId: string): Promise<DatasetProfile> {
   const response = await axios.get<DatasetProfile>(`${API_BASE}/datasets/${datasetId}/profile`)
+  return response.data
+}
+
+export async function fetchAllRows(datasetId: string): Promise<FullRowsResponse> {
+  const response = await axios.get<FullRowsResponse>(`${API_BASE}/datasets/${datasetId}/rows`)
   return response.data
 }

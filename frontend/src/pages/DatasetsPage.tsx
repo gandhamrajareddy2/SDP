@@ -3,13 +3,20 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import ModulePage from '../components/ModulePage'
 import { fetchRecentDatasets } from '../services/datasets'
+import { fetchVersions } from '../services/platform'
 import { PROJECTS } from '../services/projects'
+import type { DatasetId } from '../types/dataset'
 
 export default function DatasetsPage() {
   const [searchText, setSearchText] = useState('')
+  const [selectedVersionDataset, setSelectedVersionDataset] = useState<DatasetId>(PROJECTS[0]?.id ?? 'student_performance')
   const recentDatasetsQuery = useQuery({
     queryKey: ['recent-datasets', 'hub'],
     queryFn: () => fetchRecentDatasets(100),
+  })
+  const versionsQuery = useQuery({
+    queryKey: ['dataset-versions', selectedVersionDataset],
+    queryFn: () => fetchVersions(selectedVersionDataset, 8),
   })
 
   const filteredProjects = useMemo(() => {
@@ -78,6 +85,49 @@ export default function DatasetsPage() {
             </Link>
           </article>
         ))}
+      </section>
+
+      <section className="card">
+        <h3>Dataset Versions</h3>
+        <div className="form-grid">
+          <label>
+            Dataset
+            <select value={selectedVersionDataset} onChange={(event) => setSelectedVersionDataset(event.target.value as DatasetId)}>
+              {PROJECTS.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {versionsQuery.isLoading && <p>Loading versions...</p>}
+        {versionsQuery.isError && <p>Could not load versions.</p>}
+        {versionsQuery.data && versionsQuery.data.length === 0 && <p>No versions yet. Generate datasets to create versions.</p>}
+        {versionsQuery.data && versionsQuery.data.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Dataset ID</th>
+                  <th>Config</th>
+                  <th>Metrics</th>
+                </tr>
+              </thead>
+              <tbody>
+                {versionsQuery.data.map((version) => (
+                  <tr key={`${version.dataset_name}-${version.version_number}`}>
+                    <td>v{version.version_number}</td>
+                    <td>{version.dataset_id.slice(0, 10)}</td>
+                    <td>{version.config_json}</td>
+                    <td>{version.metrics_json}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </ModulePage>
   )
