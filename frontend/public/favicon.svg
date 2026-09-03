@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DataScience Lab favicon">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f59e0b" />
+      <stop offset="1" stop-color="#06b6d4" />
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)" />
+  <path d="M16 44V22" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+  <path d="M28 44V30" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+  <path d="M40 44V26" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+  <path d="M52 44V18" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+  <path d="M16 44L28 30L40 26L52 18" fill="none" stroke="#dcfce7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="16" cy="44" r="2.5" fill="#dcfce7" />
+  <circle cx="28" cy="30" r="2.5" fill="#dcfce7" />
+  <circle cx="40" cy="26" r="2.5" fill="#dcfce7" />
+  <circle cx="52" cy="18" r="2.5" fill="#dcfce7" />
+  <text x="32" y="56" text-anchor="middle" font-size="10" font-family="Verdana, Arial, sans-serif" fill="#ffffff">DSL</text>
+</svg>
