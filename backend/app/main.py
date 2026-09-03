@@ -248,7 +248,7 @@ def reset_dataset(dataset_id: str) -> dict[str, str]:
     return {"status": "deleted"}
 
 
-@app.get("/", include_in_schema=False)
+@app.get("/", include_in_schema=False, response_model=None)
 def serve_root() -> FileResponse | JSONResponse:
     index_file = FRONTEND_DIST_DIR / "index.html"
     if index_file.exists():
@@ -262,7 +262,7 @@ def serve_root() -> FileResponse | JSONResponse:
     )
 
 
-@app.get("/{full_path:path}", include_in_schema=False)
+@app.get("/{full_path:path}", include_in_schema=False, response_model=None)
 def serve_spa_files(full_path: str) -> FileResponse | JSONResponse:
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="Not found")
