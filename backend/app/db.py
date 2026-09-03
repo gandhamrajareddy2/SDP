@@ -96,3 +96,20 @@ def delete_dataset_record(dataset_id: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def list_dataset_records(limit: int = 20) -> list[sqlite3.Row]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM datasets
+            ORDER BY datetime(created_at) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return rows
+    finally:
+        conn.close()

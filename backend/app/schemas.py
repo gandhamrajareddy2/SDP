@@ -30,3 +30,14 @@ class DatasetSummaryResponse(BaseModel):
     missing_summary: dict[str, int]
     preview: list[dict]
     suggested_questions: list[str]
+
+
+class DatasetRecordResponse(BaseModel):
+    dataset_id: str
+    dataset_name: str
+    rows_count: int
+    columns_count: int
+    difficulty: str
+    include_missing_values: bool
+    include_outliers: bool
+    created_at: str

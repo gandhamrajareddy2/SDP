@@ -15,8 +15,8 @@ from .dataset_generator import (
     get_dataset_template,
     get_projects,
 )
-from .db import delete_dataset_record, get_dataset_record, init_db, save_dataset_record
-from .schemas import DatasetGenerateRequest, DatasetSummaryResponse
+from .db import delete_dataset_record, get_dataset_record, init_db, list_dataset_records, save_dataset_record
+from .schemas import DatasetGenerateRequest, DatasetRecordResponse, DatasetSummaryResponse
 
 app = FastAPI(title="DataScience Lab API", version="0.1.0")
 
@@ -42,6 +42,25 @@ def health() -> dict[str, str]:
 @app.get("/api/projects")
 def projects() -> list[dict[str, str]]:
     return get_projects()
+
+
+@app.get("/api/datasets", response_model=list[DatasetRecordResponse])
+def list_datasets(limit: int = 20) -> list[DatasetRecordResponse]:
+    safe_limit = max(1, min(limit, 100))
+    rows = list_dataset_records(limit=safe_limit)
+    return [
+        DatasetRecordResponse(
+            dataset_id=row["dataset_id"],
+            dataset_name=row["dataset_name"],
+            rows_count=row["rows_count"],
+            columns_count=row["columns_count"],
+            difficulty=row["difficulty"],
+            include_missing_values=bool(row["include_missing_values"]),
+            include_outliers=bool(row["include_outliers"]),
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
 
 
 def _try_cast(value: str) -> object | None:

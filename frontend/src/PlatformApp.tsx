@@ -1,0 +1,68 @@
+import { Suspense, lazy } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import AppShell from './components/AppShell'
+import './shell.css'
+
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const LearnPage = lazy(() => import('./pages/LearnPage'))
+const DatasetsPage = lazy(() => import('./pages/DatasetsPage'))
+const DataExplorerPage = lazy(() => import('./pages/DataExplorerPage'))
+const DataCleaningLabPage = lazy(() => import('./pages/DataCleaningLabPage'))
+const VisualizationLabPage = lazy(() => import('./pages/VisualizationLabPage'))
+const StatisticsLabPage = lazy(() => import('./pages/StatisticsLabPage'))
+const InsightsLabPage = lazy(() => import('./pages/InsightsLabPage'))
+const PracticePage = lazy(() => import('./pages/PracticePage'))
+const ChallengesPage = lazy(() => import('./pages/ChallengesPage'))
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
+const LearningPathPage = lazy(() => import('./pages/LearningPathPage'))
+const ResourcesPage = lazy(() => import('./pages/ResourcesPage'))
+const ProgressPage = lazy(() => import('./pages/ProgressPage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
+
+const navItems = [
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/learn', label: 'Learn' },
+  { to: '/datasets', label: 'Datasets' },
+  { to: '/data-explorer', label: 'Data Explorer' },
+  { to: '/data-cleaning-lab', label: 'Data Cleaning Lab' },
+  { to: '/visualization-lab', label: 'Visualization Lab' },
+  { to: '/statistics-lab', label: 'Statistics Lab' },
+  { to: '/insights-lab', label: 'Insights Lab' },
+  { to: '/practice', label: 'Practice' },
+  { to: '/challenges', label: 'Challenges' },
+  { to: '/projects', label: 'Projects' },
+  { to: '/learning-path', label: 'Learning Path' },
+  { to: '/resources', label: 'Resources' },
+  { to: '/progress', label: 'Progress' },
+]
+
+export default function PlatformApp() {
+  return (
+    <BrowserRouter>
+      <AppShell navItems={navItems}>
+        <Suspense fallback={<div className="route-loading">Loading module...</div>}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/home" element={<Navigate to="/" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/learn" element={<LearnPage />} />
+            <Route path="/datasets" element={<DatasetsPage />} />
+            <Route path="/data-explorer" element={<DataExplorerPage />} />
+            <Route path="/data-cleaning-lab" element={<DataCleaningLabPage />} />
+            <Route path="/visualization-lab" element={<VisualizationLabPage />} />
+            <Route path="/statistics-lab" element={<StatisticsLabPage />} />
+            <Route path="/insights-lab" element={<InsightsLabPage />} />
+            <Route path="/practice" element={<PracticePage />} />
+            <Route path="/challenges" element={<ChallengesPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/learning-path" element={<LearningPathPage />} />
+            <Route path="/resources" element={<ResourcesPage />} />
+            <Route path="/progress" element={<ProgressPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
+      </AppShell>
+    </BrowserRouter>
+  )
+}
