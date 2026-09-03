@@ -2,9 +2,11 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BASE_DIR.parent
 DATA_DIR = BASE_DIR / "data"
 GENERATED_DIR = DATA_DIR / "generated"
 DB_PATH = DATA_DIR / "lab.db"
+FRONTEND_DIST_DIR = Path(os.getenv("FRONTEND_DIST_DIR", str(REPO_ROOT / "frontend" / "dist"))).resolve()
 
 
 def _split_csv_env(name: str, default: list[str]) -> list[str]:

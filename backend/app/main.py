@@ -7,8 +7,9 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 
-from .config import CORS_ALLOW_CREDENTIALS, CORS_ALLOW_ORIGINS, GENERATED_DIR
+from .config import CORS_ALLOW_CREDENTIALS, CORS_ALLOW_ORIGINS, FRONTEND_DIST_DIR, GENERATED_DIR
 from .dataset_generator import generate_student_dataset
 from .db import delete_dataset_record, get_dataset_record, init_db, save_dataset_record
 from .schemas import DatasetGenerateRequest, DatasetSummaryResponse
@@ -245,3 +246,39 @@ def reset_dataset(dataset_id: str) -> dict[str, str]:
 
     delete_dataset_record(dataset_id)
     return {"status": "deleted"}
+
+
+@app.get("/", include_in_schema=False)
+def serve_root() -> FileResponse | JSONResponse:
+    index_file = FRONTEND_DIST_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return JSONResponse(
+        status_code=200,
+        content={
+            "message": "DataScience Lab API is running.",
+            "hint": "Build frontend/dist to serve UI from this backend root.",
+        },
+    )
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def serve_spa_files(full_path: str) -> FileResponse | JSONResponse:
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    dist_root = FRONTEND_DIST_DIR.resolve()
+    candidate_path = (dist_root / full_path).resolve()
+    if candidate_path.exists() and candidate_path.is_file() and candidate_path.is_relative_to(dist_root):
+        return FileResponse(candidate_path)
+
+    index_file = dist_root / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": "Frontend build artifacts not found. Build frontend first.",
+        },
+    )

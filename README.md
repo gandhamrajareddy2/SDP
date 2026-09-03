@@ -29,6 +29,23 @@ npm run dev
 
 Use the root [render.yaml](render.yaml) blueprint to deploy both services from one repository.
 
+## One-Roof Single Service Option
+
+If you want one backend service to host both API and frontend from the same domain:
+
+1. Build frontend first so [frontend/dist](frontend/dist) exists.
+2. Start backend from repo root using module path.
+
+```bash
+pip install -r requirements.txt
+uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Notes:
+
+- Root `requirements.txt` forwards to [backend/requirements.txt](backend/requirements.txt).
+- Backend serves frontend files automatically when `frontend/dist` exists.
+
 ### Backend service
 
 - rootDir: backend
