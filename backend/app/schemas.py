@@ -4,7 +4,14 @@ from pydantic import BaseModel, Field
 
 
 class DatasetGenerateRequest(BaseModel):
-    dataset: Literal["student_performance"] = "student_performance"
+    dataset: Literal[
+        "student_performance",
+        "house_prices",
+        "customer_churn",
+        "movie_success",
+        "retail_sales",
+        "environmental_data",
+    ] = "student_performance"
     num_records: int = Field(default=500, ge=100, le=5000)
     include_missing_values: bool = True
     include_outliers: bool = True

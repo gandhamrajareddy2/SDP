@@ -10,7 +10,11 @@ from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
 
 from .config import CORS_ALLOW_CREDENTIALS, CORS_ALLOW_ORIGINS, FRONTEND_DIST_DIR, GENERATED_DIR
-from .dataset_generator import generate_student_dataset
+from .dataset_generator import (
+    generate_dataset as generate_dataset_bundle,
+    get_dataset_template,
+    get_projects,
+)
 from .db import delete_dataset_record, get_dataset_record, init_db, save_dataset_record
 from .schemas import DatasetGenerateRequest, DatasetSummaryResponse
 
@@ -37,38 +41,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/projects")
 def projects() -> list[dict[str, str]]:
-    return [
-        {
-            "id": "student_performance",
-            "title": "Student Performance",
-            "description": "Predict student final performance using study patterns.",
-        },
-        {
-            "id": "house_prices",
-            "title": "House Prices",
-            "description": "Analyze and predict house prices.",
-        },
-        {
-            "id": "customer_churn",
-            "title": "Customer Churn",
-            "description": "Understand why customers leave.",
-        },
-        {
-            "id": "movie_success",
-            "title": "Movie Success",
-            "description": "Analyze factors associated with movie success.",
-        },
-        {
-            "id": "retail_sales",
-            "title": "Retail Sales",
-            "description": "Analyze sales patterns and forecast outcomes.",
-        },
-        {
-            "id": "environmental_data",
-            "title": "Environmental Data",
-            "description": "Analyze temperature, rainfall, and pollution trends.",
-        },
-    ]
+    return get_projects()
 
 
 def _try_cast(value: str) -> object | None:
@@ -114,6 +87,7 @@ def _build_summary(
     fieldnames: list[str],
     rows: list[dict[str, object | None]],
 ) -> DatasetSummaryResponse:
+    template = get_dataset_template(dataset_name)
     cols_by_name: dict[str, list[object | None]] = {column: [] for column in fieldnames}
     for row in rows:
         for column in fieldnames:
@@ -124,43 +98,23 @@ def _build_summary(
         dataset_name=dataset_name,
         rows=len(rows),
         columns=len(fieldnames),
-        target_suggestion="final_score",
+        target_suggestion=template.target_suggestion,
         difficulty=difficulty,
-        column_descriptions={
-            "student_id": "Unique identifier for each student.",
-            "age": "Age in years.",
-            "gender": "Student gender category.",
-            "study_hours": "Average self-study hours per day.",
-            "attendance": "Class attendance percentage.",
-            "sleep_hours": "Average sleep hours per day.",
-            "previous_score": "Previous exam score out of 100.",
-            "extracurricular": "Whether student participates in extracurricular activities.",
-            "internet_access": "Quality of internet access at home.",
-            "parent_education": "Highest parent/guardian education level.",
-            "final_score": "Current final score out of 100 (target variable).",
-        },
+        column_descriptions=template.column_descriptions,
         data_types={column: _infer_dtype(values) for column, values in cols_by_name.items()},
         missing_summary={
             column: sum(1 for value in values if value is None)
             for column, values in cols_by_name.items()
         },
         preview=rows[:20],
-        suggested_questions=[
-            "How does attendance relate to final_score?",
-            "Which parent_education group has the highest average final_score?",
-            "Do students with higher study_hours usually score better?",
-            "Which columns contain missing values and how should we handle them?",
-            "Are there outliers in study_hours or final_score?",
-        ],
+        suggested_questions=template.suggested_questions,
     )
 
 
 @app.post("/api/datasets/generate", response_model=DatasetSummaryResponse)
 def generate_dataset(payload: DatasetGenerateRequest) -> DatasetSummaryResponse:
-    if payload.dataset != "student_performance":
-        raise HTTPException(status_code=400, detail="Only student_performance is supported in this slice.")
-
-    bundle = generate_student_dataset(
+    bundle = generate_dataset_bundle(
+        dataset=payload.dataset,
         n=payload.num_records,
         include_missing_values=payload.include_missing_values,
         include_outliers=payload.include_outliers,

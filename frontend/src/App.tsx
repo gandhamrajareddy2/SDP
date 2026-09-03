@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import axios from 'axios'
 import {
@@ -38,8 +38,16 @@ type DatasetSummary = {
   suggested_questions: string[]
 }
 
+type DatasetId =
+  | 'student_performance'
+  | 'house_prices'
+  | 'customer_churn'
+  | 'movie_success'
+  | 'retail_sales'
+  | 'environmental_data'
+
 type DatasetPayload = {
-  dataset: 'student_performance'
+  dataset: DatasetId
   num_records: number
   include_missing_values: boolean
   include_outliers: boolean
@@ -446,7 +454,7 @@ function renderHighlightedText(text: string, words: string[]): Array<{ text: str
 }
 
 function App() {
-  const [selectedProject, setSelectedProject] = useState<string>('student_performance')
+  const [selectedProject, setSelectedProject] = useState<DatasetId>('student_performance')
   const [numRecords, setNumRecords] = useState<number>(500)
   const [includeMissingValues, setIncludeMissingValues] = useState(true)
   const [includeOutliers, setIncludeOutliers] = useState(true)
@@ -455,8 +463,8 @@ function App() {
   const [datasetRows, setDatasetRows] = useState<DataRow[]>([])
   const [statusMessage, setStatusMessage] = useState('Generate your first dataset to begin.')
   const [chartType, setChartType] = useState<'scatter' | 'bar' | 'line' | 'histogram'>('scatter')
-  const [xAxis, setXAxis] = useState('study_hours')
-  const [yAxis, setYAxis] = useState('final_score')
+  const [xAxis, setXAxis] = useState('')
+  const [yAxis, setYAxis] = useState('')
   const [interpretations, setInterpretations] = useState<Record<'scatter' | 'bar' | 'line' | 'histogram', string>>({
     scatter: '',
     bar: '',
@@ -511,7 +519,7 @@ function App() {
 
   const numericColumns = useMemo(() => {
     if (!datasetSummary) {
-      return ['study_hours', 'attendance', 'previous_score', 'final_score']
+      return []
     }
     return Object.entries(datasetSummary.data_types)
       .filter(([, dtype]) => dtype === 'int' || dtype === 'float')
@@ -520,47 +528,103 @@ function App() {
 
   const categoricalColumns = useMemo(() => {
     if (!datasetSummary) {
-      return ['parent_education', 'internet_access']
+      return []
     }
     return Object.entries(datasetSummary.data_types)
       .filter(([, dtype]) => dtype === 'str')
       .map(([name]) => name)
   }, [datasetSummary])
 
+  useEffect(() => {
+    if (numericColumns.length === 0) {
+      setXAxis('')
+      setYAxis('')
+      return
+    }
+
+    const target = datasetSummary?.target_suggestion ?? ''
+    const nextY = numericColumns.includes(target) ? target : numericColumns[numericColumns.length - 1]
+    const nextX = numericColumns.find((column) => column !== nextY) ?? numericColumns[0]
+
+    if (!numericColumns.includes(xAxis)) {
+      setXAxis(nextX)
+    }
+    if (!numericColumns.includes(yAxis)) {
+      setYAxis(nextY)
+    }
+  }, [datasetSummary, numericColumns, xAxis, yAxis])
+
+  const chartXAxis = useMemo(() => {
+    if (numericColumns.includes(xAxis)) {
+      return xAxis
+    }
+    const target = datasetSummary?.target_suggestion ?? ''
+    return numericColumns.find((column) => column !== target) ?? numericColumns[0] ?? ''
+  }, [datasetSummary, numericColumns, xAxis])
+
+  const chartYAxis = useMemo(() => {
+    if (numericColumns.includes(yAxis)) {
+      return yAxis
+    }
+    const target = datasetSummary?.target_suggestion ?? ''
+    if (numericColumns.includes(target)) {
+      return target
+    }
+    return numericColumns[numericColumns.length - 1] ?? ''
+  }, [datasetSummary, numericColumns, yAxis])
+
   const scatterLineData = useMemo(
     () =>
       datasetRows
         .map((row) => ({
-          x: toNumber(row[xAxis]),
-          y: toNumber(row[yAxis]),
+          x: toNumber(row[chartXAxis]),
+          y: toNumber(row[chartYAxis]),
         }))
         .filter((row): row is { x: number; y: number } => row.x !== null && row.y !== null)
         .slice(0, 450),
-    [datasetRows, xAxis, yAxis],
+    [datasetRows, chartXAxis, chartYAxis],
   )
 
   const barChartData = useMemo(() => {
-    const groupKey = categoricalColumns[0] ?? 'parent_education'
-    return groupMean(datasetRows, groupKey, yAxis)
-  }, [datasetRows, yAxis, categoricalColumns])
+    const groupKey = categoricalColumns[0]
+    if (!groupKey || !chartYAxis) {
+      return []
+    }
+    return groupMean(datasetRows, groupKey, chartYAxis)
+  }, [datasetRows, chartYAxis, categoricalColumns])
 
-  const histogramData = useMemo(() => histogram(datasetRows, xAxis), [datasetRows, xAxis])
+  const histogramData = useMemo(() => histogram(datasetRows, chartXAxis), [datasetRows, chartXAxis])
 
   const insightCards = useMemo(() => {
     if (!datasetSummary || datasetRows.length === 0) {
       return []
     }
 
-    const finalScores = datasetRows
-      .map((row) => toNumber(row.final_score))
+    const target = datasetSummary.target_suggestion
+    const numericTarget = numericColumns.includes(target)
+    const targetValues = datasetRows
+      .map((row) => toNumber(row[target]))
       .filter((value): value is number => value !== null)
-    const studyVsScore = correlation(datasetRows, 'study_hours', 'final_score')
-    const attendanceVsScore = correlation(datasetRows, 'attendance', 'final_score')
-    const topGroup = groupMean(datasetRows, 'parent_education', 'final_score')[0]
-    const avgScore =
-      finalScores.length > 0
-        ? Number((finalScores.reduce((acc, value) => acc + value, 0) / finalScores.length).toFixed(2))
+    const nonTargetNumeric = numericColumns.filter((column) => column !== target)
+    const bestCorrelation = nonTargetNumeric
+      .map((column) => ({ column, value: correlation(datasetRows, column, target) }))
+      .filter((item): item is { column: string; value: number } => item.value !== null)
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0]
+    const topGroup =
+      numericTarget && categoricalColumns.length > 0 ? groupMean(datasetRows, categoricalColumns[0], target)[0] : null
+    const avgTarget =
+      targetValues.length > 0
+        ? Number((targetValues.reduce((acc, value) => acc + value, 0) / targetValues.length).toFixed(2))
         : 0
+
+    const classBreakdown = new Map<string, number>()
+    if (!numericTarget) {
+      for (const row of datasetRows) {
+        const key = String(row[target] ?? 'Unknown')
+        classBreakdown.set(key, (classBreakdown.get(key) ?? 0) + 1)
+      }
+    }
+    const topClass = Array.from(classBreakdown.entries()).sort((a, b) => b[1] - a[1])[0]
 
     return [
       {
@@ -571,46 +635,61 @@ function App() {
       },
       {
         title: 'Information',
-        text: `Average final score is ${avgScore}. Correlation(study_hours, final_score) = ${
-          studyVsScore ?? 'NA'
-        }.`,
+        text: numericTarget
+          ? `Average ${target} is ${avgTarget}. Strongest feature relation: ${bestCorrelation?.column ?? 'NA'} (${bestCorrelation?.value ?? 'NA'}).`
+          : `Most frequent target class: ${topClass?.[0] ?? 'NA'} (${topClass?.[1] ?? 0} rows).`,
       },
       {
         title: 'Context',
-        text: `Top group by average score: ${topGroup?.name ?? 'NA'} (${topGroup?.value ?? 'NA'}). Correlation(attendance, final_score) = ${
-          attendanceVsScore ?? 'NA'
-        }.`,
+        text:
+          numericTarget && topGroup
+            ? `Top ${categoricalColumns[0]} group by average ${target}: ${topGroup.name} (${topGroup.value}).`
+            : `Use column descriptions and missing-value summary to judge reliability before modeling decisions.`,
       },
       {
         title: 'Wisdom',
-        text: 'A practical decision is to improve attendance and steady study hours before trying complex interventions.',
+        text: `Prioritize data cleaning and feature checks first, then design actions linked to ${target}.`,
       },
     ]
-  }, [datasetSummary, datasetRows])
+  }, [datasetSummary, datasetRows, numericColumns, categoricalColumns])
 
   const meritsDemerits = useMemo(() => {
     if (!datasetSummary || datasetRows.length === 0) {
       return { merits: [], demerits: [] }
     }
 
-    const finalScores = datasetRows
-      .map((row) => toNumber(row.final_score))
+    const target = datasetSummary.target_suggestion
+    const numericTarget = numericColumns.includes(target)
+    const targetValues = datasetRows
+      .map((row) => toNumber(row[target]))
       .filter((value): value is number => value !== null)
-    const outliers = getOutlierCount(finalScores)
+    const outliers = getOutlierCount(targetValues)
+
+    const classBreakdown = new Map<string, number>()
+    if (!numericTarget) {
+      for (const row of datasetRows) {
+        const key = String(row[target] ?? 'Unknown')
+        classBreakdown.set(key, (classBreakdown.get(key) ?? 0) + 1)
+      }
+    }
+    const topClass = Array.from(classBreakdown.entries()).sort((a, b) => b[1] - a[1])[0]
+    const topClassShare = topClass ? ((topClass[1] / datasetSummary.rows) * 100).toFixed(1) : null
 
     return {
       merits: [
         'Contains both numerical and categorical variables, useful for full data science workflow practice.',
-        'Has realistic patterns between study behavior and outcomes, which supports meaningful analysis.',
+        `Target variable (${target}) is clearly identified for modeling activities.`,
         `Dataset size (${datasetSummary.rows} rows) is good for beginner model experiments.`,
       ],
       demerits: [
-        'Generated data may not represent all real-world school conditions.',
-        `Potential outliers detected in final_score: ${outliers}. This can affect model stability if not handled.`,
-        'Correlation does not prove cause and effect; classroom decisions should include domain knowledge.',
+        'Generated data may not represent all real-world conditions.',
+        numericTarget
+          ? `Potential outliers detected in ${target}: ${outliers}. This can affect model stability if not handled.`
+          : `Possible class imbalance: ${topClass?.[0] ?? 'NA'} is about ${topClassShare ?? '0.0'}% of records.`,
+        'Correlation does not prove cause and effect; domain context must guide final decisions.',
       ],
     }
-  }, [datasetSummary, datasetRows])
+  }, [datasetSummary, datasetRows, numericColumns])
 
   const learningSections: Record<'data' | 'information' | 'context' | 'wisdom', LearningSection> = {
     data: {
@@ -624,13 +703,13 @@ function App() {
       title: 'Page 2: Information',
       learningGoal: 'Convert raw rows into statistics and patterns.',
       whatToDo: 'Use the chart builder and summary cards to inspect distributions and relationships.',
-      whatToObserve: 'Notice trends like study hours and attendance influence on scores.',
+      whatToObserve: 'Notice which features show stronger association with the chosen target.',
       outcome: 'You can report findings with evidence.',
     },
     context: {
       title: 'Page 3: Context',
-      learningGoal: 'Explain why findings matter in a real classroom setting.',
-      whatToDo: 'Compare groups like parent_education and internet_access.',
+      learningGoal: 'Explain why findings matter in a real decision-making setting.',
+      whatToDo: 'Compare key groups and consider data collection limitations.',
       whatToObserve: 'Recognize where data may be biased or incomplete.',
       outcome: 'You can connect analysis to practical context.',
     },
@@ -664,13 +743,8 @@ function App() {
   }
 
   const handleGenerate = () => {
-    if (selectedProject !== 'student_performance') {
-      setStatusMessage('Current lab slice supports Student Performance only. Please select that project.')
-      return
-    }
-
     generateMutation.mutate({
-      dataset: 'student_performance',
+      dataset: selectedProject,
       num_records: numRecords,
       include_missing_values: includeMissingValues,
       include_outliers: includeOutliers,
@@ -722,7 +796,7 @@ function App() {
           <div className="form-grid">
             <label>
               Dataset
-              <select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}>
+              <select value={selectedProject} onChange={(event) => setSelectedProject(event.target.value as DatasetId)}>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.title}
@@ -855,7 +929,11 @@ function App() {
               </label>
               <label>
                 X Axis
-                <select value={xAxis} onChange={(event) => setXAxis(event.target.value)}>
+                <select
+                  value={chartXAxis}
+                  onChange={(event) => setXAxis(event.target.value)}
+                  disabled={numericColumns.length === 0}
+                >
                   {numericColumns.map((column) => (
                     <option key={column} value={column}>
                       {column}
@@ -865,7 +943,11 @@ function App() {
               </label>
               <label>
                 Y Axis
-                <select value={yAxis} onChange={(event) => setYAxis(event.target.value)}>
+                <select
+                  value={chartYAxis}
+                  onChange={(event) => setYAxis(event.target.value)}
+                  disabled={numericColumns.length === 0}
+                >
                   {numericColumns.map((column) => (
                     <option key={column} value={column}>
                       {column}
@@ -879,8 +961,8 @@ function App() {
                 {chartType === 'scatter' ? (
                   <ScatterChart>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="x" name={xAxis} />
-                    <YAxis dataKey="y" name={yAxis} />
+                    <XAxis dataKey="x" name={chartXAxis} />
+                    <YAxis dataKey="y" name={chartYAxis} />
                     <Tooltip />
                     <Scatter data={scatterLineData} fill="#0ea5e9" />
                   </ScatterChart>
@@ -913,7 +995,7 @@ function App() {
             </div>
             <div className="interpretation-box">
               <h4>Student Interpretation</h4>
-              <p className="interpretation-prompt">{getInterpretationPrompt(chartType, xAxis, yAxis)}</p>
+              <p className="interpretation-prompt">{getInterpretationPrompt(chartType, chartXAxis || 'x-axis', chartYAxis || 'y-axis')}</p>
               <textarea
                 value={activeInterpretation}
                 onChange={(event) =>
