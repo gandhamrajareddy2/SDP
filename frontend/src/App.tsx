@@ -270,7 +270,7 @@ function evaluateInterpretation(
   }
 
   const trendWords = ['increase', 'decrease', 'higher', 'lower', 'positive', 'negative', 'trend', 'relation']
-  const evidenceWords = ['average', 'most', 'least', 'outlier', 'spread', 'distribution', 'cluster', 'group']
+  const evidenceWords = ['average', 'most', 'least', 'outlier', 'spread', 'distribution', 'cluster', 'group', 'better']
   const decisionWords = ['therefore', 'so', 'recommend', 'action', 'decision', 'should', 'focus']
   const trendPhrases = [
     { label: 'higher attendance leads to better scores', regex: /higher\s+attendance.*(better|higher)\s+scores?/i },
@@ -285,6 +285,10 @@ function evaluateInterpretation(
     { label: 'majority of students', regex: /majority\s+of\s+students/i },
     { label: 'most students', regex: /most\s+students/i },
     { label: 'clear outlier', regex: /clear\s+outlier/i },
+    {
+      label: 'group performing better',
+      regex: /\b(?:non[- ]binary|male|female|group|students?)\b.*\b(performs?|performing|scores?)\b.*\b(better|higher)\b/i,
+    },
   ]
   const decisionPhrases = [
     { label: 'we should focus on', regex: /we\s+should\s+focus\s+on/i },
@@ -309,6 +313,7 @@ function evaluateInterpretation(
       { label: 'highest group', regex: /highest\s+group/i },
       { label: 'lowest group', regex: /lowest\s+group/i },
       { label: 'group comparison', regex: /group\s+comparison/i },
+      { label: 'performing better', regex: /performing\s+better|scores?\s+(higher|better)/i },
     ],
     line: [
       { label: 'gradual increase', regex: /gradual\s+increase/i },
@@ -368,9 +373,20 @@ function evaluateInterpretation(
     total: 0,
     max: 8,
   }
-  weighted.total = weighted.trend + weighted.evidence + weighted.decision + weighted.chartSpecific
+
+  const relevantByChart: Record<'scatter' | 'bar' | 'line' | 'histogram', Array<keyof typeof weighted>> = {
+    scatter: ['trend', 'evidence', 'decision', 'chartSpecific'],
+    line: ['trend', 'evidence', 'decision', 'chartSpecific'],
+    bar: ['evidence', 'decision', 'chartSpecific'],
+    histogram: ['evidence', 'decision', 'chartSpecific'],
+  }
+
+  const relevant = relevantByChart[chartType]
+  weighted.total = relevant.reduce((acc, key) => acc + weighted[key], 0)
+  weighted.max = relevant.length * 2
 
   const score = Math.max(1, Math.round((weighted.total / weighted.max) * 5))
+  const ratio = weighted.total / weighted.max
 
   const detected = {
     trend: trendMatches,
@@ -379,7 +395,7 @@ function evaluateInterpretation(
     chartSpecific: chartSpecificMatches,
   }
 
-  if (weighted.total >= 6) {
+  if (ratio >= 0.75) {
     return {
       level: 'excellent',
       score: 5,
@@ -388,10 +404,10 @@ function evaluateInterpretation(
       weighted,
     }
   }
-  if (weighted.total >= 3) {
+  if (ratio >= 0.45) {
     return {
       level: 'good',
-      score,
+      score: Math.max(3, score),
       message: 'Good start. Add more complete analytical phrases to strengthen evidence and decision quality.',
       detected,
       weighted,
