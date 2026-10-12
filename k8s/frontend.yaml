@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datascience-lab-frontend
+  namespace: data-visualization-tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datascience-lab-frontend
+  template:
+    metadata:
+      labels:
+        app: datascience-lab-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: datascience-lab-frontend:k8s-v2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datascience-lab-frontend
+  namespace: data-visualization-tool
+spec:
+  selector:
+    app: datascience-lab-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  type: ClusterIP

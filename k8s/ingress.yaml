@@ -1,0 +1,42 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: datascience-lab-ingress
+  namespace: data-visualization-tool
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: datascience-lab.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: datascience-lab-backend
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: datascience-lab-frontend
+                port:
+                  number: 80
+    - host: datascience-lab.127.0.0.1.nip.io
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: datascience-lab-backend
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: datascience-lab-frontend
+                port:
+                  number: 80
